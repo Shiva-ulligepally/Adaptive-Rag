@@ -1,225 +1,63 @@
-import React, { useState, useEffect, useRef } from 'react';
-import API_BASE from './config/api';
+import React, { useState, useRef, useEffect } from 'react';
+import { useRAGPipeline } from './hooks/useRAGPipeline';
+
+// Import Modular Parameter Components
+import QueryOptimizerPanel from './components/QueryOptimizerPanel';
+import RetrievalSettings from './components/RetrievalSettings';
+import RerankToggle from './components/RerankToggle';
+
+// Import Modular Inspector Stage Components
+import QueryStage from './components/PipelineInspector/QueryStage';
+import RetrievalStage from './components/PipelineInspector/RetrievalStage';
+import RRFStage from './components/PipelineInspector/RRFStage';
+import RerankStage from './components/PipelineInspector/RerankStage';
+import PromptStage from './components/PipelineInspector/PromptStage';
 
 function App() {
-  // Config & API States
-  const [groqApiKey, setGroqApiKey] = useState(() => localStorage.getItem('groq_api_key') || '');
-  const [chromaUrl, setChromaUrl] = useState(() => localStorage.getItem('chroma_url') || 'http://localhost:8000');
-  const [chromaApiKey, setChromaApiKey] = useState(() => localStorage.getItem('chroma_api_key') || '');
-  
-  // RAG Parameters
-  const [searchType, setSearchType] = useState('similarity'); // 'similarity' | 'keyword' | 'chroma'
-  const [chunkSize, setChunkSize] = useState(150);
-  const [chunkOverlap, setChunkOverlap] = useState(30);
-  const [numResults, setNumResults] = useState(3);
-  
-  // App Operational States
-  const [query, setQuery] = useState('');
-  const [chatHistory, setChatHistory] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: 'Welcome to AI assistance that helps to understand about the uploaded documents.',
-      meta: { engine: 'system' }
-    }
-  ]);
-  const [activeInspect, setActiveInspect] = useState(null); // stores inspector info of currently selected message
-  const [serverStatus, setServerStatus] = useState({
-    online: false,
-    pdfFound: false,
-    isIndexed: false,
-    indexStats: null,
-    chroma: { connected: false, url: 'http://localhost:8000', collection: '' }
-  });
-  
-  // Loading & Alert UI States
-  const [isIndexing, setIsIndexing] = useState(false);
-  const [isQuerying, setIsQuerying] = useState(false);
-  const [alert, setAlert] = useState(null);
+  const {
+    groqApiKey,
+    setGroqApiKey,
+    chromaUrl,
+    setChromaUrl,
+    chromaApiKey,
+    setChromaApiKey,
+    optimizationType,
+    setOptimizationType,
+    searchStrategy,
+    setSearchStrategy,
+    isReRankingEnabled,
+    setIsReRankingEnabled,
+    chunkSize,
+    setChunkSize,
+    chunkOverlap,
+    setChunkOverlap,
+    numResults,
+    setNumResults,
+    chatHistory,
+    activeInspect,
+    setActiveInspect,
+    serverStatus,
+    isIndexing,
+    isQuerying,
+    alert,
+    handleIndex,
+    submitQuery
+  } = useRAGPipeline();
 
+  const [queryInput, setQueryInput] = useState('');
+  const [showCreds, setShowCreds] = useState(false);
   const messagesEndRef = useRef(null);
-
-  // Auto-save credentials to localStorage
-  useEffect(() => {
-    localStorage.setItem('groq_api_key', groqApiKey);
-  }, [groqApiKey]);
-
-  useEffect(() => {
-    localStorage.setItem('chroma_url', chromaUrl);
-  }, [chromaUrl]);
-
-  useEffect(() => {
-    localStorage.setItem('chroma_api_key', chromaApiKey);
-  }, [chromaApiKey]);
-
-  // Fetch status from backend on mount and when connection params change
-  const fetchStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/status?chromaUrl=${encodeURIComponent(chromaUrl)}&chromaApiKey=${encodeURIComponent(chromaApiKey)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setServerStatus({
-          online: true,
-          pdfFound: data.pdfFound,
-          isIndexed: data.isIndexed,
-          indexStats: data.indexStats,
-          chroma: data.chroma
-        });
-      } else {
-        throw new Error('Server not online');
-      }
-    } catch (e) {
-      setServerStatus(prev => ({ ...prev, online: false }));
-    }
-  };
-
-  useEffect(() => {
-    fetchStatus();
-    // Poll status every 10 seconds
-    const interval = setInterval(fetchStatus, 10000);
-    return () => clearInterval(interval);
-  }, [chromaUrl, chromaApiKey]);
 
   // Scroll to bottom of chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isQuerying]);
 
-  // Trigger server PDF parsing and index creation
-  const handleIndex = async () => {
-    setIsIndexing(true);
-    setAlert(null);
-    try {
-      const response = await fetch(`${API_BASE}/api/index-existing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chunkSize,
-          chunkOverlap,
-          chromaUrl,
-          chromaApiKey
-        })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setAlert({ type: 'success', message: 'Document split and vector database loaded successfully!' });
-        setServerStatus(prev => ({
-          ...prev,
-          isIndexed: true,
-          indexStats: data.stats,
-          chroma: { ...prev.chroma, connected: data.chroma.indexed }
-        }));
-      } else {
-        setAlert({ type: 'error', message: data.error || 'Indexing failed.' });
-      }
-    } catch (err) {
-      setAlert({ type: 'error', message: `Could not connect to Node.js backend: ${err.message}` });
-    } finally {
-      setIsIndexing(false);
-    }
-  };
-
-  // Submit Query to RAG backend
-  const handleSubmitQuery = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!query.trim()) return;
-    if (isQuerying) return;
-
-
-
-    const currentQuery = query;
-    setQuery('');
-    setAlert(null);
-
-    // 1. Add User query to history
-    const userMessageId = `user_${Date.now()}`;
-    const botMessageId = `bot_${Date.now()}`;
-    
-    setChatHistory(prev => [
-      ...prev,
-      {
-        id: userMessageId,
-        role: 'user',
-        content: currentQuery,
-        meta: { timestamp: new Date().toLocaleTimeString() }
-      }
-    ]);
-
-    setIsQuerying(true);
-
-    try {
-      const response = await fetch(`${API_BASE}/api/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: currentQuery,
-          searchType,
-          numResults,
-          chunkSize,
-          chunkOverlap,
-          groqApiKey,
-          chromaUrl,
-          chromaApiKey
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // 2. Add LLM Answer to history
-        setChatHistory(prev => [
-          ...prev,
-          {
-            id: botMessageId,
-            role: 'assistant',
-            content: data.answer,
-            isUnrelated: data.isUnrelated,
-            meta: {
-              timestamp: new Date().toLocaleTimeString(),
-              engine: data.usedEngine,
-              chunksCount: data.retrievedChunks?.length || 0
-            },
-            inspector: {
-              retrievedChunks: data.retrievedChunks || [],
-              systemPrompt: data.inspector?.systemPrompt || '',
-              userQuery: data.inspector?.userQuery || ''
-            }
-          }
-        ]);
-
-        // Auto-select latest bot response for RAG Inspector
-        setActiveInspect({
-          retrievedChunks: data.retrievedChunks || [],
-          systemPrompt: data.inspector?.systemPrompt || '',
-          userQuery: data.inspector?.userQuery || ''
-        });
-
-        // Trigger indexing status update in case auto-indexing happened
-        fetchStatus();
-      } else {
-        setChatHistory(prev => [
-          ...prev,
-          {
-            id: botMessageId,
-            role: 'assistant',
-            content: `⚠️ Error from server: ${data.error || 'Failed to generate answer.'}`,
-            meta: { engine: 'system' }
-          }
-        ]);
-      }
-    } catch (err) {
-      setChatHistory(prev => [
-        ...prev,
-        {
-          id: botMessageId,
-          role: 'assistant',
-          content: `❌ Connection error to RAG backend: ${err.message}. Make sure Node backend is running.`,
-          meta: { engine: 'system' }
-        }
-      ]);
-    } finally {
-      setIsQuerying(false);
-    }
+    if (!queryInput.trim() || isQuerying) return;
+    submitQuery(queryInput);
+    setQueryInput('');
   };
 
   return (
@@ -227,10 +65,10 @@ function App() {
       {/* SIDEBAR: Configuration Panel */}
       <aside className="sidebar glass-panel">
         <div className="brand">
-          <div className="brand-icon">R</div>
+          <div className="brand-icon">A</div>
           <div>
-            <h1 className="brand-name">Naive RAG</h1>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>10-Yr Architect Standard</p>
+            <h1 className="brand-name">Advanced RAG</h1>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Enterprise Modular Architecture</p>
           </div>
         </div>
 
@@ -247,7 +85,7 @@ function App() {
             <span>Document(s):</span>
             <span className="status-value" style={{ fontSize: '11px', color: serverStatus.pdfFound ? 'var(--accent-success)' : 'var(--accent-danger)', wordBreak: 'break-all', textAlign: 'left' }}>
               {serverStatus.pdfFound 
-                ? (serverStatus.indexStats ? serverStatus.indexStats.fileName : (serverStatus.pdfFiles ? serverStatus.pdfFiles.join(', ') : 'PDFs Detected')) 
+                ? (serverStatus.indexStats ? serverStatus.indexStats.fileName : 'PDFs Detected') 
                 : 'Missing PDF'}
             </span>
           </div>
@@ -259,74 +97,81 @@ function App() {
           </div>
           {serverStatus.isIndexed && serverStatus.indexStats && (
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px', marginTop: '4px' }}>
-              <div>Chunks: {serverStatus.indexStats.chunkCount} (Size: {serverStatus.indexStats.chunkSize} words)</div>
+              <div>Chunks: {serverStatus.indexStats.chunkCount}</div>
               <div>Vocab Size: {serverStatus.indexStats.vocabularySize} words</div>
             </div>
           )}
         </div>
 
+        {/* Collapsible API Credentials panel */}
+        <div className="glass-card" style={{ padding: '10px' }}>
+          <div 
+            onClick={() => setShowCreds(!showCreds)} 
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}
+          >
+            <span>🔐 API Settings & Keys</span>
+            <span>{showCreds ? '▼' : '▶'}</span>
+          </div>
 
+          {showCreds && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '11px' }}>Groq API Key</label>
+                <input 
+                  type="password" 
+                  className="form-input" 
+                  style={{ fontSize: '11px', padding: '6px 8px' }} 
+                  placeholder="Paste Groq Key..." 
+                  value={groqApiKey} 
+                  onChange={(e) => setGroqApiKey(e.target.value)} 
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '11px' }}>Chroma URL</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  style={{ fontSize: '11px', padding: '6px 8px' }} 
+                  value={chromaUrl} 
+                  onChange={(e) => setChromaUrl(e.target.value)} 
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '11px' }}>Chroma Token</label>
+                <input 
+                  type="password" 
+                  className="form-input" 
+                  style={{ fontSize: '11px', padding: '6px 8px' }} 
+                  placeholder="Optional Token..." 
+                  value={chromaApiKey} 
+                  onChange={(e) => setChromaApiKey(e.target.value)} 
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* RAG Tuning Panel */}
-        <div>
-          <h2 className="section-title">RAG Parameters</h2>
-          <div className="form-group">
-            <label className="form-label">Search Strategy</label>
-            <select
-              className="form-select"
-              value={searchType}
-              onChange={(e) => setSearchType(e.target.value)}
-            >
-              <option value="similarity">Similarity Search (Local TF-IDF)</option>
-              <option value="keyword">Keyword Search (Local Term Match)</option>
-              <option value="chroma">Similarity Search (Chroma DB)</option>
-            </select>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--glass-border)', paddingTop: '14px' }}>
+          <h2 className="section-title" style={{ margin: 0 }}>Advanced Pipeline Params</h2>
           
-          <div className="form-group">
-            <label className="form-label">
-              <span>Chunk Size (Words)</span>
-              <span style={{ color: 'var(--accent-primary)' }}>{chunkSize}</span>
-            </label>
-            <input
-              type="range"
-              min="50"
-              max="400"
-              step="10"
-              value={chunkSize}
-              onChange={(e) => setChunkSize(parseInt(e.target.value))}
-            />
-          </div>
+          {/* Stage 1 Optimizer selection */}
+          <QueryOptimizerPanel value={optimizationType} onChange={setOptimizationType} />
 
-          <div className="form-group">
-            <label className="form-label">
-              <span>Chunk Overlap (Words)</span>
-              <span style={{ color: 'var(--accent-primary)' }}>{chunkOverlap}</span>
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="5"
-              value={chunkOverlap}
-              onChange={(e) => setChunkOverlap(parseInt(e.target.value))}
-            />
-          </div>
+          {/* Stage 2 & 3 Retrieval & chunking parameters */}
+          <RetrievalSettings 
+            strategy={searchStrategy} 
+            setStrategy={setSearchStrategy}
+            chunkSize={chunkSize}
+            setChunkSize={setChunkSize}
+            chunkOverlap={chunkOverlap}
+            setChunkOverlap={setChunkOverlap}
+            numResults={numResults}
+            setNumResults={setNumResults}
+          />
 
-          <div className="form-group">
-            <label className="form-label">
-              <span>Retrieve Count (Top-K)</span>
-              <span style={{ color: 'var(--accent-primary)' }}>{numResults}</span>
-            </label>
-            <input
-              type="range"
-              min="1"
-              max="8"
-              step="1"
-              value={numResults}
-              onChange={(e) => setNumResults(parseInt(e.target.value))}
-            />
-          </div>
+          {/* Stage 4 LLM Re-ranking */}
+          <RerankToggle enabled={isReRankingEnabled} onChange={setIsReRankingEnabled} />
         </div>
 
         {/* Index Action Button */}
@@ -358,7 +203,7 @@ function App() {
         <div className="chat-container glass-panel">
           <header className="chat-header">
             <div className="chat-header-title">
-              <h2>Simple RAG Chat Room</h2>
+              <h2>Advanced RAG Chat Room</h2>
               <p>Strict anti-hallucination context validation</p>
             </div>
             {serverStatus.chroma.connected && (
@@ -403,7 +248,7 @@ function App() {
             {isQuerying && (
               <div className="message message-bot" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span className="loading-spinner" style={{ borderColor: 'rgba(99, 102, 241, 0.3)', borderTopColor: 'var(--accent-secondary)' }}></span>
-                <span style={{ color: 'var(--text-secondary)' }}>Searching vector space, injecting context and generating strict completion...</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Executing advanced query optimization, hybrid fusion, and semantic reranking...</span>
               </div>
             )}
             
@@ -411,18 +256,18 @@ function App() {
           </div>
 
           {/* Query Form Input */}
-          <form onSubmit={handleSubmitQuery} className="chat-input-area">
+          <form onSubmit={handleSubmit} className="chat-input-area">
             <input
               className="chat-input"
-              placeholder="Ask a question about Fundamental Rights (e.g. What is Article 14?)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ask a question about Fundamental Rights (e.g. What is Article 19?)"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
               disabled={isQuerying}
             />
             <button
               type="submit"
-              className={`btn btn-primary ${isQuerying || !query.trim() ? 'btn-disabled' : ''}`}
-              disabled={isQuerying || !query.trim()}
+              className={`btn btn-primary ${isQuerying || !queryInput.trim() ? 'btn-disabled' : ''}`}
+              disabled={isQuerying || !queryInput.trim()}
               style={{ width: '100px', height: '56px', borderRadius: '12px' }}
             >
               Ask
@@ -431,7 +276,7 @@ function App() {
         </div>
 
         {/* RAG Inspector Panel */}
-        <div className="inspector-panel glass-panel">
+        <div className="inspector-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <header className="inspector-header">
             <h2 className="inspector-title">
               <span className="inspector-pulse"></span>
@@ -442,37 +287,43 @@ function App() {
           {activeInspect ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <h3 className="section-title" style={{ marginTop: 0 }}>Active Prompt Query</h3>
-                <div style={{ fontSize: '14px', padding: '10px', background: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                <h3 className="section-title" style={{ marginTop: 0 }}>Active Search Query</h3>
+                <div style={{ fontSize: '14px', padding: '10px', background: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--glass-border)', fontStyle: 'italic' }}>
                   "{activeInspect.userQuery}"
                 </div>
               </div>
 
-              <div>
-                <h3 className="section-title">Retrieved Chunks ({activeInspect.retrievedChunks.length})</h3>
-                {activeInspect.retrievedChunks.map((res, i) => (
-                  <div key={res.chunk?.id || i} className="glass-card chunk-card">
-                    <div className="chunk-header">
-                      <span className="chunk-id">#{res.chunk?.id || `chunk_${i}`}</span>
-                      {res.score !== undefined && (
-                        <span className="chunk-score">
-                          Score: {res.score.toFixed(4)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="chunk-text">
-                      {res.chunk?.text}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {activeInspect.pipeline ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Stage 1: Query Optimizer Display */}
+                  <QueryStage optimizedQueries={activeInspect.pipeline.optimizedQueries} />
 
-              <div>
-                <h3 className="section-title">Full Injected System Prompt</h3>
-                <div className="prompt-box">
-                  {activeInspect.systemPrompt}
+                  {/* Stage 2: Hybrid Retrieval Display */}
+                  <RetrievalStage 
+                    denseResults={activeInspect.pipeline.denseResults} 
+                    sparseResults={activeInspect.pipeline.sparseResults} 
+                  />
+
+                  {/* Stage 3: RRF Blending Display */}
+                  <RRFStage rrfResults={activeInspect.pipeline.rrfResults} />
+
+                  {/* Stage 4: LLM Re-ranking Display */}
+                  <RerankStage rerankedResults={activeInspect.pipeline.rerankedResults} />
+
+                  {/* Stage 5: Injected Prompt */}
+                  <PromptStage 
+                    systemPrompt={activeInspect.systemPrompt} 
+                    finalContext={activeInspect.pipeline.finalContext} 
+                  />
                 </div>
-              </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                    ⚠️ This answer was generated using the old naive RAG query pipeline. Upgrade parameters in the sidebar to view advanced stage telemetry.
+                  </div>
+                  <PromptStage systemPrompt={activeInspect.systemPrompt} />
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-chat">

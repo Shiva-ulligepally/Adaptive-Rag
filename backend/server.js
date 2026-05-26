@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pdf from 'pdf-parse';
 import { LocalVectorStore, chunkText, ChromaClient, queryGroqLLM } from './rag-engine.js';
+import { executeAdvancedRAG } from './rag/rag-pipeline.js';
 
 // Setup __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -219,24 +220,32 @@ app.post('/api/query', async (req, res) => {
   try {
     const {
       query,
-      searchType = 'similarity', // 'similarity', 'keyword', 'chroma'
+      searchType = 'similarity', // backward compatibility
       numResults = 3,
       chunkSize = 150,
       chunkOverlap = 30,
       groqApiKey,
       chromaUrl,
-      chromaApiKey
+      chromaApiKey,
+      // New Advanced RAG parameters
+      optimizationType, 
+      searchStrategy,
+      isReRankingEnabled
     } = req.body;
 
     if (!query) {
       return res.status(400).json({ success: false, error: 'Query parameter is required.' });
     }
 
+    const activeChromaUrl = chromaUrl || process.env.CHROMA_URL || 'http://localhost:8000';
+    const activeChromaKey = chromaApiKey || process.env.CHROMA_API_KEY || '';
+    const activeGroqKey = groqApiKey || process.env.GROQ_API_KEY;
+
     // Auto-index fallback if not indexed yet
     if (!isIndexed) {
       console.log(`[RAG Query] Server not indexed. Auto-indexing all PDF documents...`);
       try {
-        await performIndexing(chunkSize, chunkOverlap, chromaUrl, chromaApiKey);
+        await performIndexing(chunkSize, chunkOverlap, activeChromaUrl, activeChromaKey);
       } catch (err) {
         return res.status(404).json({
           success: false,
@@ -245,92 +254,57 @@ app.post('/api/query', async (req, res) => {
       }
     }
 
-    let retrievedResults = [];
-    let usedEngine = 'local-similarity';
-
-    const activeChromaUrl = chromaUrl || process.env.CHROMA_URL || 'http://localhost:8000';
-    const activeChromaKey = chromaApiKey || process.env.CHROMA_API_KEY || '';
-
-    // Route search queries based on searchType
-    if (searchType === 'chroma') {
-      const chromaHealthy = await getChromaHealth(activeChromaUrl, activeChromaKey);
-      if (chromaHealthy) {
-        try {
-          console.log(`[RAG Query] Performing similarity search in Chroma DB...`);
-          const chroma = new ChromaClient(activeChromaUrl, activeChromaKey);
-          retrievedResults = await chroma.querySimilarity(query, numResults);
-          usedEngine = 'chroma-similarity';
-        } catch (err) {
-          console.error(`[Chroma Search Error] Fallback to local similarity: ${err.message}`);
-          retrievedResults = localStore.searchSimilarity(query, numResults);
-          usedEngine = `local-similarity (Chroma error: ${err.message})`;
-        }
-      } else {
-        console.log(`[RAG Query] Chroma DB offline. Fallback to local similarity...`);
-        retrievedResults = localStore.searchSimilarity(query, numResults);
-        usedEngine = 'local-similarity (Chroma Offline Fallback)';
-      }
-    } else if (searchType === 'keyword') {
-      console.log(`[RAG Query] Performing local keyword search...`);
-      retrievedResults = localStore.searchKeyword(query, numResults);
-      usedEngine = 'local-keyword';
-    } else {
-      // Default: local similarity (TF-IDF + Cosine)
-      console.log(`[RAG Query] Performing local TF-IDF similarity search...`);
-      retrievedResults = localStore.searchSimilarity(query, numResults);
-      usedEngine = 'local-similarity';
-    }
-
-    if (retrievedResults.length === 0) {
-      retrievedResults = localStore.chunks.slice(0, numResults).map(c => ({ chunk: c, score: 0.0 }));
-    }
-
-    // Ingest results context and query Groq LLM
-    const contextChunks = retrievedResults.map(r => r.chunk);
-    const activeGroqKey = groqApiKey || process.env.GROQ_API_KEY;
-
     if (!activeGroqKey || activeGroqKey === 'your_groq_api_key_here' || activeGroqKey.trim() === '') {
       return res.status(400).json({
         success: false,
-        error: 'Groq API Key is missing. Please provide it in settings or environment.',
-        retrievedChunks: retrievedResults,
-        usedEngine
+        error: 'Groq API Key is missing. Please provide it in settings or environment.'
       });
     }
 
-    console.log(`[RAG Query] Invoking Groq LLM API with ${contextChunks.length} context chunks...`);
-    const answer = await queryGroqLLM(activeGroqKey, query, contextChunks);
+    // Resolve advanced parameters with backward compatibility mappings
+    // If explicit new parameters aren't supplied, infer them from the old 'searchType'
+    const resolvedOptType = optimizationType || 'none';
+    const resolvedStrategy = searchStrategy || (searchType === 'keyword' ? 'sparse' : 'dense');
+    const resolvedReRanking = isReRankingEnabled !== undefined ? isReRankingEnabled : false;
 
-    const isUnrelated = answer.includes("I am sorry, but the provided document does not contain information");
+    // Invoke Advanced RAG Orchestrator Pipeline
+    const result = await executeAdvancedRAG({
+      query,
+      localStore,
+      groqApiKey: activeGroqKey,
+      chromaUrl: activeChromaUrl,
+      chromaApiKey: activeChromaKey,
+      optimizationType: resolvedOptType,
+      searchStrategy: resolvedStrategy,
+      isReRankingEnabled: resolvedReRanking,
+      numResults,
+      chunkSize,
+      chunkOverlap
+    });
 
-    // Build full prompt inspector payload (tracking document source per chunk!)
-    const contextText = contextChunks.map((c, i) => `[Chunk #${i + 1} from Source: ${c.metadata?.source || 'Unknown File'}]\n${c.text}`).join('\n\n');
-    const fullSystemPrompt = `You are an expert Naive RAG Assistant specialized in analyzing documents.
-You will be provided a document context below, followed by a user query. You MUST follow these rules strictly:
+    const isUnrelated = result.answer.includes("I am sorry, but the provided document does not contain information");
 
-1. The answer for the query MUST be retrieved from the given document ONLY.
-2. Do NOT take any information from the outside. Do NOT assume, speculate, or draw from external knowledge.
-3. Your answer must NOT be hallucinated. If the context does not contain the answer, you must output EXACTLY the following text:
-   "I am sorry, but the provided document does not contain information to answer your question. Please ask something related to the document."
-4. If the user's query is completely unrelated to the topic of the document, you must output EXACTLY:
-   "I am sorry, but the provided document does not contain information to answer your question. Please ask something related to the document."
-5. Ground all explanations in direct facts from the text.
-
----
-DOCUMENT CONTEXT:
-${contextText}
----`;
-
+    // Format response keeping total backward compatibility for UI expects
     res.json({
       success: true,
-      answer,
+      answer: result.answer,
       isUnrelated,
-      retrievedChunks: retrievedResults,
-      usedEngine,
+      sources: result.sources,
+      retrievedChunks: result.pipeline.rerankedResults.map(r => ({
+        chunk: {
+          id: r.id,
+          text: r.text,
+          metadata: r.metadata
+        },
+        score: r.score
+      })),
+      usedEngine: result.usedEngine,
       inspector: {
-        systemPrompt: fullSystemPrompt,
+        systemPrompt: result.pipeline.finalContext ? `DOCUMENT CONTEXT:\n${result.pipeline.finalContext}\n---` : '',
         userQuery: query
-      }
+      },
+      // Telemetry data for the new Advanced RAG Inspector UI
+      pipeline: result.pipeline
     });
 
   } catch (error) {

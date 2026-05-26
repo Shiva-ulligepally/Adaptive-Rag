@@ -1,6 +1,16 @@
 {
   "name": "fullstack-vercel-app",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "install-all": "npm install",
+    "build": "npm run build -w frontend",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run dev -w backend"
+  },
   "engines": {
     "node": "20.x"
   }
