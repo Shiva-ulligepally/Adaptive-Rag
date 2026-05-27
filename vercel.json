@@ -1,18 +1,13 @@
 {
-"version": 2,
-"functions": {
-"backend/server.js": {
-"maxDuration": 30
-}
-},
-"rewrites": [
-{
-"source": "/api/(.)",
-"destination": "/backend/server.js"
-},
-{
-"source": "/(.)",
-"destination": "/frontend/dist/$1"
-}
-]
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/frontend/dist/index.html"
+    }
+  ]
 }

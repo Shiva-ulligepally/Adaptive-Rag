@@ -314,12 +314,5 @@ app.post('/api/query', async (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, () => {
-    console.log(`Server running on ${PORT}`);
-  });
-}
-
-const module = { exports: {} };
-module.exports = app;
+// Export Express app for Vercel serverless environment
 export default app;
