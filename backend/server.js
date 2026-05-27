@@ -314,9 +314,9 @@ app.post('/api/query', async (req, res) => {
   }
 });
 
-if (!process.env.VERCEL) {
+if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
-    console.log(`[Server Ready] Naive RAG backend running on http://localhost:${PORT}`);
+    console.log(`Server running on ${PORT}`);
   });
 }
 

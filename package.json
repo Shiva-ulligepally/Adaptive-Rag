@@ -1,15 +1,9 @@
 {
-  "name": "fullstack-vercel-app",
+  "name": "adaptive-rag",
   "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
-    "install-all": "npm install",
-    "build": "npm run build -w frontend",
-    "dev:frontend": "npm run dev -w frontend",
-    "dev:backend": "npm run dev -w backend"
+    "build": "cd frontend && npm install && npm run build",
+    "vercel-build": "cd frontend && npm install && npm run build"
   },
   "engines": {
     "node": "20.x"
