@@ -2,9 +2,7 @@
   "name": "adaptive-rag",
   "private": true,
   "scripts": {
-    "install-backend": "cd backend && npm install",
-    "build-frontend": "cd frontend && npm install && npm run build",
-    "build": "npm run install-backend && npm run build-frontend",
+    "build": "cd frontend && npm install && npm run build",
     "vercel-build": "npm run build"
   },
   "engines": {
