@@ -320,4 +320,6 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+const module = { exports: {} };
+module.exports = app;
 export default app;

@@ -1,19 +1,18 @@
 {
-  "version": 2,
-  "functions": {
-    "backend/server.js": {
-      "maxDuration": 30,
-      "includeFiles": "backend/documents/**"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/backend/server.js"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/frontend/dist/$1"
-    }
-  ]
+"version": 2,
+"functions": {
+"backend/server.js": {
+"maxDuration": 30
+}
+},
+"rewrites": [
+{
+"source": "/api/(.)",
+"destination": "/backend/server.js"
+},
+{
+"source": "/(.)",
+"destination": "/frontend/dist/$1"
+}
+]
 }
