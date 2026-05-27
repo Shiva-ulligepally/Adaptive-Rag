@@ -6,7 +6,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pdf from 'pdf-parse';
 import { LocalVectorStore, chunkText, ChromaClient, queryGroqLLM } from './rag-engine.js';
-import { executeAdvancedRAG } from './rag/rag-pipeline.js';
+import { executeAdaptiveRAG } from './rag/adaptive-rag.js';
+
+
 
 // Setup __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +24,8 @@ if (fs.existsSync(documentsDir)) {
   console.log("[DEBUG] Documents directory missing");
 }
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -220,17 +223,12 @@ app.post('/api/query', async (req, res) => {
   try {
     const {
       query,
-      searchType = 'similarity', // backward compatibility
       numResults = 3,
       chunkSize = 150,
       chunkOverlap = 30,
       groqApiKey,
       chromaUrl,
-      chromaApiKey,
-      // New Advanced RAG parameters
-      optimizationType, 
-      searchStrategy,
-      isReRankingEnabled
+      chromaApiKey
     } = req.body;
 
     if (!query) {
@@ -261,49 +259,49 @@ app.post('/api/query', async (req, res) => {
       });
     }
 
-    // Resolve advanced parameters with backward compatibility mappings
-    // If explicit new parameters aren't supplied, infer them from the old 'searchType'
-    const resolvedOptType = optimizationType || 'none';
-    const resolvedStrategy = searchStrategy || (searchType === 'keyword' ? 'sparse' : 'dense');
-    const resolvedReRanking = isReRankingEnabled !== undefined ? isReRankingEnabled : false;
-
-    // Invoke Advanced RAG Orchestrator Pipeline
-    const result = await executeAdvancedRAG({
+    // Invoke Adaptive RAG Orchestrator Pipeline
+    const result = await executeAdaptiveRAG({
       query,
       localStore,
       groqApiKey: activeGroqKey,
       chromaUrl: activeChromaUrl,
       chromaApiKey: activeChromaKey,
-      optimizationType: resolvedOptType,
-      searchStrategy: resolvedStrategy,
-      isReRankingEnabled: resolvedReRanking,
       numResults,
       chunkSize,
       chunkOverlap
     });
 
-    const isUnrelated = result.answer.includes("I am sorry, but the provided document does not contain information");
+    const isUnrelated = result.hallucinationEvaluation?.hallucinated || result.answer.includes("I am sorry, but the provided document does not contain information");
 
-    // Format response keeping total backward compatibility for UI expects
-    res.json({
+    return res.json({
       success: true,
       answer: result.answer,
       isUnrelated,
       sources: result.sources,
-      retrievedChunks: result.pipeline.rerankedResults.map(r => ({
+      retrievedChunks: result.pipeline?.rerankedResults?.map(r => ({
         chunk: {
           id: r.id,
           text: r.text,
           metadata: r.metadata
         },
         score: r.score
-      })),
+      })) || [],
       usedEngine: result.usedEngine,
       inspector: {
-        systemPrompt: result.pipeline.finalContext ? `DOCUMENT CONTEXT:\n${result.pipeline.finalContext}\n---` : '',
+        systemPrompt: result.pipeline?.finalContext ? `DOCUMENT CONTEXT:\n${result.pipeline.finalContext}\n---` : '',
         userQuery: query
       },
-      // Telemetry data for the new Advanced RAG Inspector UI
+      // Premium Adaptive RAG Grader & Router metrics
+      adaptive: {
+        route: result.route,
+        dynamicParams: result.dynamicParams,
+        retrievalGrades: result.retrievalGrades,
+        queryRewrite: result.queryRewrite,
+        hallucinationEvaluation: result.hallucinationEvaluation,
+        answerEvaluation: result.answerEvaluation,
+        pipelineHistory: result.pipelineHistory,
+        webSearchResults: result.webSearchResults || []
+      },
       pipeline: result.pipeline
     });
 

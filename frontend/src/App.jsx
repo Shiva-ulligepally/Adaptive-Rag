@@ -1,17 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRAGPipeline } from './hooks/useRAGPipeline';
 
-// Import Modular Parameter Components
-import QueryOptimizerPanel from './components/QueryOptimizerPanel';
-import RetrievalSettings from './components/RetrievalSettings';
-import RerankToggle from './components/RerankToggle';
-
-// Import Modular Inspector Stage Components
-import QueryStage from './components/PipelineInspector/QueryStage';
-import RetrievalStage from './components/PipelineInspector/RetrievalStage';
-import RRFStage from './components/PipelineInspector/RRFStage';
-import RerankStage from './components/PipelineInspector/RerankStage';
-import PromptStage from './components/PipelineInspector/PromptStage';
+// Import new RAG Visualizer
+import RAGVisualizer from './components/RAGVisualizer';
 
 function App() {
   const {
@@ -21,18 +12,6 @@ function App() {
     setChromaUrl,
     chromaApiKey,
     setChromaApiKey,
-    optimizationType,
-    setOptimizationType,
-    searchStrategy,
-    setSearchStrategy,
-    isReRankingEnabled,
-    setIsReRankingEnabled,
-    chunkSize,
-    setChunkSize,
-    chunkOverlap,
-    setChunkOverlap,
-    numResults,
-    setNumResults,
     chatHistory,
     activeInspect,
     setActiveInspect,
@@ -46,6 +25,7 @@ function App() {
 
   const [queryInput, setQueryInput] = useState('');
   const [showCreds, setShowCreds] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState('flow'); // 'flow' | 'prompt' | 'raw'
   const messagesEndRef = useRef(null);
 
   // Scroll to bottom of chat
@@ -65,24 +45,26 @@ function App() {
       {/* SIDEBAR: Configuration Panel */}
       <aside className="sidebar glass-panel">
         <div className="brand">
-          <div className="brand-icon">A</div>
+          <div className="brand-icon">🔄</div>
           <div>
-            <h1 className="brand-name">Advanced RAG</h1>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Enterprise Modular Architecture</p>
+            <h1 className="brand-name">Adaptive RAG</h1>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+              SELF-CORRECTING COGNITIVE FLOWS
+            </p>
           </div>
         </div>
 
         {/* Server Status Health check */}
         <div className="glass-card status-widget">
           <div className="status-row">
-            <span>RAG Backend:</span>
+            <span>RAG Core:</span>
             <span className="status-value">
               <span className={`status-dot ${serverStatus.online ? 'active' : 'inactive'}`}></span>
               {serverStatus.online ? 'Online' : 'Offline'}
             </span>
           </div>
           <div className="status-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-            <span>Document(s):</span>
+            <span>Knowledge Base:</span>
             <span className="status-value" style={{ fontSize: '11px', color: serverStatus.pdfFound ? 'var(--accent-success)' : 'var(--accent-danger)', wordBreak: 'break-all', textAlign: 'left' }}>
               {serverStatus.pdfFound 
                 ? (serverStatus.indexStats ? serverStatus.indexStats.fileName : 'PDFs Detected') 
@@ -90,44 +72,69 @@ function App() {
             </span>
           </div>
           <div className="status-row">
-            <span>Index Status:</span>
-            <span className="status-value" style={{ fontWeight: 600 }}>
-              {serverStatus.isIndexed ? 'Indexed ✅' : 'Not Indexed ❌'}
+            <span>State Store:</span>
+            <span className="status-value font-mono-style">
+              {serverStatus.isIndexed ? 'Indexed ✅' : 'No Index ❌'}
             </span>
           </div>
           {serverStatus.isIndexed && serverStatus.indexStats && (
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '6px', marginTop: '4px' }}>
-              <div>Chunks: {serverStatus.indexStats.chunkCount}</div>
-              <div>Vocab Size: {serverStatus.indexStats.vocabularySize} words</div>
+            <div className="stats-sub-row">
+              <div>Vector Chunks: {serverStatus.indexStats.chunkCount}</div>
+              <div>Vocabulary Size: {serverStatus.indexStats.vocabularySize} words</div>
             </div>
           )}
+        </div>
+
+        {/* Adaptive RAG Features Board */}
+        <div className="adaptive-dashboard-card glass-card">
+          <h4 className="dash-title">🛡️ Adaptive Agent Guards:</h4>
+          <div className="dash-bullet">
+            <span className="bullet-dot green"></span>
+            <span><strong>LLM Intent Router:</strong> Classifies intent & determines retrieval necessity.</span>
+          </div>
+          <div className="dash-bullet">
+            <span className="bullet-dot purple"></span>
+            <span><strong>Query Planner:</strong> Reformulates terms recursively if context matches fail.</span>
+          </div>
+          <div className="dash-bullet">
+            <span className="bullet-dot blue"></span>
+            <span><strong>Vector Indexing:</strong> TFIDF Cosine & Chroma DB hybrid semantic retrievers.</span>
+          </div>
+          <div className="dash-bullet">
+            <span className="bullet-dot pink"></span>
+            <span><strong>Double Evaluation Guards:</strong> Groundedness checks & completeness audits.</span>
+          </div>
+          <div className="dash-bullet">
+            <span className="bullet-dot cyan"></span>
+            <span><strong>Web Search fallbacks:</strong> Integrated Wikipedia intelligence pages agent.</span>
+          </div>
         </div>
 
         {/* Collapsible API Credentials panel */}
         <div className="glass-card" style={{ padding: '10px' }}>
           <div 
             onClick={() => setShowCreds(!showCreds)} 
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}
           >
-            <span>🔐 API Settings & Keys</span>
+            <span>🔐 API Settings & Secrets</span>
             <span>{showCreds ? '▼' : '▶'}</span>
           </div>
 
           {showCreds && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontSize: '11px' }}>Groq API Key</label>
+                <label className="form-label" style={{ fontSize: '10px' }}>Groq API Key</label>
                 <input 
                   type="password" 
                   className="form-input" 
                   style={{ fontSize: '11px', padding: '6px 8px' }} 
-                  placeholder="Paste Groq Key..." 
+                  placeholder="Paste gsk_..." 
                   value={groqApiKey} 
                   onChange={(e) => setGroqApiKey(e.target.value)} 
                 />
               </div>
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontSize: '11px' }}>Chroma URL</label>
+                <label className="form-label" style={{ fontSize: '10px' }}>Chroma URL</label>
                 <input 
                   type="text" 
                   className="form-input" 
@@ -137,12 +144,12 @@ function App() {
                 />
               </div>
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontSize: '11px' }}>Chroma Token</label>
+                <label className="form-label" style={{ fontSize: '10px' }}>Chroma Token</label>
                 <input 
                   type="password" 
                   className="form-input" 
                   style={{ fontSize: '11px', padding: '6px 8px' }} 
-                  placeholder="Optional Token..." 
+                  placeholder="Optional token" 
                   value={chromaApiKey} 
                   onChange={(e) => setChromaApiKey(e.target.value)} 
                 />
@@ -151,47 +158,25 @@ function App() {
           )}
         </div>
 
-        {/* RAG Tuning Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--glass-border)', paddingTop: '14px' }}>
-          <h2 className="section-title" style={{ margin: 0 }}>Advanced Pipeline Params</h2>
-          
-          {/* Stage 1 Optimizer selection */}
-          <QueryOptimizerPanel value={optimizationType} onChange={setOptimizationType} />
-
-          {/* Stage 2 & 3 Retrieval & chunking parameters */}
-          <RetrievalSettings 
-            strategy={searchStrategy} 
-            setStrategy={setSearchStrategy}
-            chunkSize={chunkSize}
-            setChunkSize={setChunkSize}
-            chunkOverlap={chunkOverlap}
-            setChunkOverlap={setChunkOverlap}
-            numResults={numResults}
-            setNumResults={setNumResults}
-          />
-
-          {/* Stage 4 LLM Re-ranking */}
-          <RerankToggle enabled={isReRankingEnabled} onChange={setIsReRankingEnabled} />
-        </div>
-
         {/* Index Action Button */}
         <button
           className={`btn btn-primary ${isIndexing || !serverStatus.pdfFound ? 'btn-disabled' : ''}`}
           onClick={handleIndex}
           disabled={isIndexing || !serverStatus.pdfFound}
+          style={{ marginTop: 'auto' }}
         >
           {isIndexing ? (
             <>
               <span className="loading-spinner"></span>
-              Indexing...
+              Structuring Documents...
             </>
           ) : (
-            'Process & Index PDF'
+            'Parse & Vectorize Library'
           )}
         </button>
 
         {alert && (
-          <div className={`alert-banner ${alert.type}`}>
+          <div className={`alert-banner ${alert.type}`} style={{ margin: '0' }}>
             {alert.type === 'error' ? '⚠️' : '✅'} {alert.message}
           </div>
         )}
@@ -203,52 +188,76 @@ function App() {
         <div className="chat-container glass-panel">
           <header className="chat-header">
             <div className="chat-header-title">
-              <h2>Advanced RAG Chat Room</h2>
-              <p>Strict anti-hallucination context validation</p>
+              <h2>Adaptive Arena</h2>
+              <p>Graded, self-correcting cognitive search engine console</p>
             </div>
-            {serverStatus.chroma.connected && (
-              <span className="inspect-badge" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: 'var(--accent-success)' }}>
-                Chroma DB Integrated
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span className="route-badge-visual">
+                🤖 Pure Adaptive RAG
               </span>
-            )}
+              {serverStatus.chroma.connected && (
+                <span className="route-badge-visual green-badge">
+                  Chroma DB Ready
+                </span>
+              )}
+            </div>
           </header>
 
           {/* Messages feed */}
           <div className="chat-messages">
-            {chatHistory.map((msg) => (
-              <div
-                key={msg.id}
-                className={`message ${msg.role === 'user' ? 'message-user' : 'message-bot'} ${msg.isUnrelated ? 'unrelated' : ''}`}
-              >
-                {msg.role === 'assistant' && (
-                  <div className="message-source-tag">
-                    {msg.isUnrelated ? '⚠️ UNRELATED WARNING' : '📄 CONTEXT BOUND ANSWER'}
-                  </div>
-                )}
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
-                {msg.meta && (
-                  <div className="message-meta">
-                    <span>Engine: {msg.meta.engine || 'N/A'}</span>
-                    <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {msg.inspector && (
-                        <span
-                          className="inspect-badge"
-                          onClick={() => setActiveInspect(msg.inspector)}
-                        >
-                          Inspect RAG
-                        </span>
+            {chatHistory.map((msg) => {
+              const isAssistant = msg.role === 'assistant';
+              const isSystem = msg.meta?.engine === 'system';
+              const msgRoute = msg.inspector?.adaptive?.route;
+              
+              const routeLabel = isAssistant && !isSystem && msgRoute
+                ? `[${msgRoute.toUpperCase()} ROUTE]`
+                : `[COGNITIVE ACTION]`;
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`message ${msg.role === 'user' ? 'message-user' : 'message-bot'} ${msg.isUnrelated ? 'unrelated' : ''} ${isSystem ? 'system-msg' : ''}`}
+                >
+                  {isAssistant && !isSystem && (
+                    <div className="message-source-tag">
+                      <span style={{ marginRight: '6px' }}>{routeLabel}</span>
+                      {msg.isUnrelated ? (
+                        <span className="tag-warning">⚠️ GRADER WARN</span>
+                      ) : (
+                        <span className="tag-success">🛡️ GROUNDED</span>
                       )}
-                      <span>{msg.meta.timestamp}</span>
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
+                    </div>
+                  )}
+                  
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: '14px' }}>{msg.content}</div>
+                  
+                  {msg.meta && !isSystem && (
+                    <div className="message-meta">
+                      <span>Engine: {msg.meta.engine || 'N/A'}</span>
+                      <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {msg.inspector && (
+                          <span
+                            className="inspect-badge"
+                            onClick={() => setActiveInspect(msg.inspector)}
+                          >
+                            Inspect Telemetry
+                          </span>
+                        )}
+                        <span>{msg.meta.timestamp}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {isQuerying && (
-              <div className="message message-bot" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="message message-bot loader-message">
                 <span className="loading-spinner" style={{ borderColor: 'rgba(99, 102, 241, 0.3)', borderTopColor: 'var(--accent-secondary)' }}></span>
-                <span style={{ color: 'var(--text-secondary)' }}>Executing advanced query optimization, hybrid fusion, and semantic reranking...</span>
+                <div className="loading-steps-ticker">
+                  <span>Routing query intent, dynamically indexing, self-correcting planning, and auditing output...</span>
+                </div>
               </div>
             )}
             
@@ -259,7 +268,7 @@ function App() {
           <form onSubmit={handleSubmit} className="chat-input-area">
             <input
               className="chat-input"
-              placeholder="Ask a question about Fundamental Rights (e.g. What is Article 19?)"
+              placeholder="Ask anything (e.g. 'What is Article 19?' or general questions like 'Who is Einstein?')"
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               disabled={isQuerying}
@@ -268,7 +277,7 @@ function App() {
               type="submit"
               className={`btn btn-primary ${isQuerying || !queryInput.trim() ? 'btn-disabled' : ''}`}
               disabled={isQuerying || !queryInput.trim()}
-              style={{ width: '100px', height: '56px', borderRadius: '12px' }}
+              style={{ width: '90px', height: '54px', borderRadius: '12px' }}
             >
               Ask
             </button>
@@ -276,62 +285,87 @@ function App() {
         </div>
 
         {/* RAG Inspector Panel */}
-        <div className="inspector-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="inspector-panel glass-panel">
           <header className="inspector-header">
             <h2 className="inspector-title">
               <span className="inspector-pulse"></span>
-              RAG Pipeline Inspector
+              Agentic Console
             </h2>
+
+            {activeInspect && (
+              <div className="inspector-tab-row">
+                <button 
+                  className={`tab-btn ${inspectorTab === 'flow' ? 'active' : ''}`}
+                  onClick={() => setInspectorTab('flow')}
+                >
+                  Execution Flow
+                </button>
+                <button 
+                  className={`tab-btn ${inspectorTab === 'prompt' ? 'active' : ''}`}
+                  onClick={() => setInspectorTab('prompt')}
+                >
+                  Prompt Injected
+                </button>
+                <button 
+                  className={`tab-btn ${inspectorTab === 'raw' ? 'active' : ''}`}
+                  onClick={() => setInspectorTab('raw')}
+                >
+                  Document Chunks
+                </button>
+              </div>
+            )}
           </header>
 
-          {activeInspect ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <h3 className="section-title" style={{ marginTop: 0 }}>Active Search Query</h3>
-                <div style={{ fontSize: '14px', padding: '10px', background: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--glass-border)', fontStyle: 'italic' }}>
-                  "{activeInspect.userQuery}"
-                </div>
-              </div>
+          <div className="inspector-tab-content">
+            {activeInspect ? (
+              <div className="active-inspector-area">
+                
+                {/* TAB 1: Diagram-aligned visual flowchart */}
+                {inspectorTab === 'flow' && (
+                  <RAGVisualizer activeInspect={activeInspect} />
+                )}
 
-              {activeInspect.pipeline ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {/* Stage 1: Query Optimizer Display */}
-                  <QueryStage optimizedQueries={activeInspect.pipeline.optimizedQueries} />
-
-                  {/* Stage 2: Hybrid Retrieval Display */}
-                  <RetrievalStage 
-                    denseResults={activeInspect.pipeline.denseResults} 
-                    sparseResults={activeInspect.pipeline.sparseResults} 
-                  />
-
-                  {/* Stage 3: RRF Blending Display */}
-                  <RRFStage rrfResults={activeInspect.pipeline.rrfResults} />
-
-                  {/* Stage 4: LLM Re-ranking Display */}
-                  <RerankStage rerankedResults={activeInspect.pipeline.rerankedResults} />
-
-                  {/* Stage 5: Injected Prompt */}
-                  <PromptStage 
-                    systemPrompt={activeInspect.systemPrompt} 
-                    finalContext={activeInspect.pipeline.finalContext} 
-                  />
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                    ⚠️ This answer was generated using the old naive RAG query pipeline. Upgrade parameters in the sidebar to view advanced stage telemetry.
+                {/* TAB 2: System Prompt */}
+                {inspectorTab === 'prompt' && (
+                  <div className="tab-details-container">
+                    <h3 className="section-title" style={{ marginTop: '0' }}>Final Context Payload</h3>
+                    <pre className="details-prompt-pre">{activeInspect.systemPrompt || '[NO CONTEXT INJECTED]'}</pre>
                   </div>
-                  <PromptStage systemPrompt={activeInspect.systemPrompt} />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="empty-chat">
-              <div className="empty-chat-icon">🔍</div>
-              <p style={{ fontSize: '14px' }}>No active inspect session.</p>
-              <p style={{ fontSize: '12px', padding: '0 20px' }}>Ask a question or click "Inspect RAG" on any answer in the chat logs to see full context injection logs.</p>
-            </div>
-          )}
+                )}
+
+                {/* TAB 3: Raw Chunks */}
+                {inspectorTab === 'raw' && (
+                  <div className="tab-details-container">
+                    <h3 className="section-title" style={{ marginTop: '0' }}>Retrieved Document Chunks</h3>
+                    {activeInspect.pipeline?.rerankedResults?.length > 0 ? (
+                      activeInspect.pipeline.rerankedResults.map((item, i) => (
+                        <div key={item.id || i} className="chunk-card glass-card">
+                          <div className="chunk-header">
+                            <span className="chunk-id">📄 Chunk #{i + 1} - {item.id}</span>
+                            <span className="chunk-score">Score: {Number(item.score || 0).toFixed(4)}</span>
+                          </div>
+                          <p className="chunk-text">{item.text}</p>
+                          <div className="chunk-meta-row">
+                            <span>Source: {item.source || 'Standard Library'}</span>
+                            {item.metadata?.article && <span className="meta-badge">{item.metadata.article}</span>}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="empty-text-inspect">No document chunks retrieved in active query route.</p>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            ) : (
+              <div className="empty-chat">
+                <div className="empty-chat-icon">⚙️</div>
+                <p style={{ fontSize: '13px', fontWeight: 600 }}>Awaiting Cognitive Action</p>
+                <p style={{ fontSize: '11px', padding: '0 20px' }}>Submit a query in the arena, or select "Inspect Telemetry" on an earlier response to display logs.</p>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

@@ -7,20 +7,12 @@ export function useRAGPipeline() {
   const [chromaUrl, setChromaUrl] = useState(() => localStorage.getItem('chroma_url') || 'http://localhost:8000');
   const [chromaApiKey, setChromaApiKey] = useState(() => localStorage.getItem('chroma_api_key') || '');
 
-  // Advanced RAG Parameters
-  const [optimizationType, setOptimizationType] = useState('none'); // 'none' | 'expansion'
-  const [searchStrategy, setSearchStrategy] = useState('hybrid');   // 'dense' | 'sparse' | 'hybrid'
-  const [isReRankingEnabled, setIsReRankingEnabled] = useState(false);
-  const [chunkSize, setChunkSize] = useState(150);
-  const [chunkOverlap, setChunkOverlap] = useState(30);
-  const [numResults, setNumResults] = useState(3);
-
   // Operational States
   const [chatHistory, setChatHistory] = useState([
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Welcome to the Advanced RAG platform. Please upload/index your documents to start querying with state-of-the-art hybrid search and re-ranking.',
+      content: 'Welcome to the Adaptive RAG arena. Query the knowledge base autonomously, inspect step-by-step cognitive evaluations, and observe query rewrites and grounding grading in real-time.',
       meta: { engine: 'system' }
     }
   ]);
@@ -79,13 +71,13 @@ export function useRAGPipeline() {
     setAlert(null);
     try {
       const data = await triggerIndexing({
-        chunkSize,
-        chunkOverlap,
+        chunkSize: 150,
+        chunkOverlap: 30,
         chromaUrl,
         chromaApiKey
       });
       if (data.success) {
-        setAlert({ type: 'success', message: 'Document split and vector database loaded successfully!' });
+        setAlert({ type: 'success', message: 'Documents successfully chunked and vectorized!' });
         setServerStatus(prev => ({
           ...prev,
           isIndexed: true,
@@ -126,12 +118,9 @@ export function useRAGPipeline() {
     try {
       const data = await queryRAG({
         query: queryText,
-        optimizationType,
-        searchStrategy,
-        isReRankingEnabled,
-        numResults,
-        chunkSize,
-        chunkOverlap,
+        numResults: 3,
+        chunkSize: 150,
+        chunkOverlap: 30,
         groqApiKey,
         chromaUrl,
         chromaApiKey
@@ -151,7 +140,8 @@ export function useRAGPipeline() {
           inspector: {
             userQuery: queryText,
             systemPrompt: data.inspector?.systemPrompt || '',
-            pipeline: data.pipeline || null
+            pipeline: data.pipeline || null,
+            adaptive: data.adaptive || null
           }
         };
 
@@ -193,18 +183,6 @@ export function useRAGPipeline() {
     setChromaUrl,
     chromaApiKey,
     setChromaApiKey,
-    optimizationType,
-    setOptimizationType,
-    searchStrategy,
-    setSearchStrategy,
-    isReRankingEnabled,
-    setIsReRankingEnabled,
-    chunkSize,
-    setChunkSize,
-    chunkOverlap,
-    setChunkOverlap,
-    numResults,
-    setNumResults,
     chatHistory,
     activeInspect,
     setActiveInspect,
