@@ -171,28 +171,36 @@ async function performIndexing(chunkSize = 150, chunkOverlap = 30, chromaUrl = n
 
 // API Health Check / System Status
 app.get('/api/status', async (req, res) => {
-  const queryChroma = req.query.chromaUrl;
-  const queryChromaKey = req.query.chromaApiKey;
-  
-  const chromaUrl = queryChroma || process.env.CHROMA_URL || 'http://localhost:8000';
-  const chromaApiKey = queryChromaKey || process.env.CHROMA_API_KEY || '';
+  try {
+    const queryChroma = req.query.chromaUrl;
+    const queryChromaKey = req.query.chromaApiKey;
+    
+    const chromaUrl = queryChroma || process.env.CHROMA_URL || 'http://localhost:8000';
+    const chromaApiKey = queryChromaKey || process.env.CHROMA_API_KEY || '';
 
-  const pdfFiles = getPdfFiles();
-  const chromaHealthy = await getChromaHealth(chromaUrl, chromaApiKey);
+    const pdfFiles = getPdfFiles();
+    const chromaHealthy = await getChromaHealth(chromaUrl, chromaApiKey);
 
-  res.json({
-    status: 'online',
-    pdfFound: pdfFiles.length > 0,
-    pdfFiles: pdfFiles.map(f => f.name),
-    pdfPath: pdfFiles.map(f => f.path).join(', '),
-    isIndexed,
-    indexStats: isIndexed ? indexedMetadata : null,
-    chroma: {
-      connected: chromaHealthy,
-      url: chromaUrl,
-      collection: 'constitution_part3_rag'
-    }
-  });
+    return res.json({
+      status: 'online',
+      pdfFound: pdfFiles.length > 0,
+      pdfFiles: pdfFiles.map(f => f.name),
+      pdfPath: pdfFiles.map(f => f.path).join(', '),
+      isIndexed,
+      indexStats: isIndexed ? indexedMetadata : null,
+      chroma: {
+        connected: chromaHealthy,
+        url: chromaUrl,
+        collection: 'constitution_part3_rag'
+      }
+    });
+  } catch (error) {
+    console.error(`[Status Route Error]: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: `Failed to fetch status: ${error.message}`
+    });
+  }
 });
 
 // Endpoint to index all root documents
@@ -239,6 +247,13 @@ app.post('/api/query', async (req, res) => {
     const activeChromaKey = chromaApiKey || process.env.CHROMA_API_KEY || '';
     const activeGroqKey = groqApiKey || process.env.GROQ_API_KEY;
 
+    // Runtime debug logging for Groq API integration
+    console.log("[DEBUG] /api/query request initiated.");
+    console.log(`[DEBUG] Query text: "${query}"`);
+    console.log(`[DEBUG] groqApiKey present in request body: ${!!groqApiKey}`);
+    console.log(`[DEBUG] GROQ_API_KEY present in process.env: ${!!process.env.GROQ_API_KEY}`);
+    console.log(`[DEBUG] Resolved activeGroqKey: ${!!activeGroqKey}`);
+
     // Auto-index fallback if not indexed yet
     if (!isIndexed) {
       console.log(`[RAG Query] Server not indexed. Auto-indexing all PDF documents...`);
@@ -253,6 +268,7 @@ app.post('/api/query', async (req, res) => {
     }
 
     if (!activeGroqKey || activeGroqKey === 'your_groq_api_key_here' || activeGroqKey.trim() === '') {
+      console.error("[ERROR] Groq API Key missing or unconfigured.");
       return res.status(400).json({
         success: false,
         error: 'Groq API Key is missing. Please provide it in settings or environment.'
@@ -312,6 +328,27 @@ app.post('/api/query', async (req, res) => {
       error: `RAG search or LLM generation failed: ${error.message}`
     });
   }
+});
+
+// Add /api/health route for debugging
+app.get('/api/health', (req, res) => {
+  return res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    env: {
+      groqApiKeyExists: !!process.env.GROQ_API_KEY,
+      chromaUrlExists: !!process.env.CHROMA_URL
+    }
+  });
+});
+
+// Global Express error handler middleware
+app.use((err, req, res, next) => {
+  console.error("[GLOBAL ERROR INTERCEPTOR]:", err);
+  return res.status(500).json({
+    success: false,
+    error: err.message || "An unexpected serverless runtime error occurred"
+  });
 });
 
 // Export Express app for Vercel serverless environment
